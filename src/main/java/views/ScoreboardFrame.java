@@ -5,6 +5,7 @@ import main.java.DAOs.PlayerDAO;
 import main.java.DAOs.StatsDAO;
 import main.java.DAOs.TeamDAO;
 import main.java.DatabaseConnection;
+import main.java.models.GameAction;
 import main.java.models.Match;
 import main.java.models.Player;
 import main.java.models.PlayerMatchStat;
@@ -15,6 +16,7 @@ import java.awt.*;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,10 +36,16 @@ public class ScoreboardFrame {
     private JTable homeTeamTable;
     private JTable awayTeamTable;
 
+    // Store a direct reference to the actions table model
+    private DefaultTableModel actionsTableModel;
+
     private Map<Integer, Integer> playerGoalsMap = new HashMap<>();
     private Map<Integer, Integer> playerAssistsMap = new HashMap<>();
     private List<Player> homePlayers;
     private List<Player> awayPlayers;
+
+    // Action recording
+    private List<GameAction> actionsRecorded = new ArrayList<>();
 
     private JLabel timerLabel;
     private Timer matchTimer;
@@ -180,13 +188,31 @@ public class ScoreboardFrame {
             startPauseTimerButton.setText("Start");
         });
 
+        // Initialize table models first
+        homeTeamTableModel = createPlayerStatsTableModel();
+        awayTeamTableModel = createPlayerStatsTableModel();
+
+        // Load player data
+        loadPlayerData();
+
+        // Home team action panel
+        JPanel homeActionPanel = createTeamActionPanel("Home Team");
+        // Away team action panel
+        JPanel awayActionPanel = createTeamActionPanel("Away Team");
+
+        // Create player action recording section
+        JPanel actionPanel = new JPanel();
+        actionPanel.setBorder(BorderFactory.createTitledBorder("Record Player Actions"));
+        actionPanel.setLayout(new GridLayout(1, 2, 10, 0));
+        actionPanel.add(homeActionPanel);
+        actionPanel.add(awayActionPanel);
+
         // Create player statistics tables
         JPanel tablesPanel = new JPanel(new GridLayout(1, 2, 20, 0));
 
         // Home team players table
         JPanel homeTablePanel = new JPanel(new BorderLayout());
         homeTablePanel.add(new JLabel("Home Team Players"), BorderLayout.NORTH);
-        homeTeamTableModel = createPlayerStatsTableModel();
         homeTeamTable = new JTable(homeTeamTableModel);
         homeTeamTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         homeTablePanel.add(new JScrollPane(homeTeamTable), BorderLayout.CENTER);
@@ -194,7 +220,6 @@ public class ScoreboardFrame {
         // Away team players table
         JPanel awayTablePanel = new JPanel(new BorderLayout());
         awayTablePanel.add(new JLabel("Away Team Players"), BorderLayout.NORTH);
-        awayTeamTableModel = createPlayerStatsTableModel();
         awayTeamTable = new JTable(awayTeamTableModel);
         awayTeamTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         awayTablePanel.add(new JScrollPane(awayTeamTable), BorderLayout.CENTER);
@@ -202,8 +227,40 @@ public class ScoreboardFrame {
         tablesPanel.add(homeTablePanel);
         tablesPanel.add(awayTablePanel);
 
-        // Load player data
-        loadPlayerData();
+        // Actions recorded table
+        JPanel actionsTablePanel = new JPanel(new BorderLayout());
+        actionsTablePanel.setBorder(BorderFactory.createTitledBorder("Recorded Actions"));
+
+        // Create and store a reference to the actions table model
+        actionsTableModel = new DefaultTableModel(
+                new Object[][] {},
+                new String[] {"Time", "Player", "Action Type"}
+        ) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false; // Make table read-only
+            }
+        };
+
+        JTable actionsTable = new JTable(actionsTableModel);
+        JScrollPane actionsScrollPane = new JScrollPane(actionsTable);
+        actionsScrollPane.setPreferredSize(new Dimension(0, 150));
+        actionsTablePanel.add(actionsScrollPane, BorderLayout.CENTER);
+
+        // Add remove action button
+        JButton removeActionButton = new JButton("Remove Selected Action");
+        removeActionButton.addActionListener(e -> {
+            int selectedRow = actionsTable.getSelectedRow();
+            if (selectedRow != -1) {
+                actionsRecorded.remove(selectedRow);
+                actionsTableModel.removeRow(selectedRow);
+                updatePlayerStatsFromActions();
+            }
+        });
+        actionsTablePanel.add(removeActionButton, BorderLayout.SOUTH);
+
+        // Load existing actions
+        loadExistingActions(actionsTableModel);
 
         // Save button
         saveButton = new JButton("Update Score & Stats");
@@ -219,16 +276,208 @@ public class ScoreboardFrame {
 
         // Add components to content panel
         contentPanel.add(dateLabel);
-        contentPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
         contentPanel.add(scorePanel);
         contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        contentPanel.add(actionPanel);
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        contentPanel.add(actionsTablePanel);
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         contentPanel.add(tablesPanel);
-        contentPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
         contentPanel.add(saveButton);
         contentPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         contentPanel.add(backButton);
 
-        frame.add(contentPanel, BorderLayout.CENTER);
+        frame.add(new JScrollPane(contentPanel), BorderLayout.CENTER);
+    }
+
+    private JPanel createTeamActionPanel(String teamName) {
+        JPanel panel = new JPanel(new GridLayout(0, 1, 5, 5));
+        panel.setBorder(BorderFactory.createTitledBorder(teamName));
+
+        JPanel playerSelectionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        playerSelectionPanel.add(new JLabel("Player:"));
+
+        // Player dropdown
+        JComboBox<PlayerItem> playerComboBox = new JComboBox<>();
+        List<Player> playerList = teamName.contains("Home") ? homePlayers : awayPlayers;
+        if (playerList != null) {
+            for (Player player : playerList) {
+                playerComboBox.addItem(new PlayerItem(player));
+            }
+        }
+        playerSelectionPanel.add(playerComboBox);
+
+        // Action type selection panel
+        JPanel actionTypePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        actionTypePanel.add(new JLabel("Action:"));
+
+        JComboBox<String> actionTypeComboBox = new JComboBox<>(new String[] {"GOAL", "ASSIST"});
+        actionTypePanel.add(actionTypeComboBox);
+
+        // Add action button
+        JButton addActionButton = new JButton("Record Action");
+        addActionButton.addActionListener(e -> {
+            if (playerComboBox.getSelectedItem() != null) {
+                PlayerItem selectedPlayer = (PlayerItem) playerComboBox.getSelectedItem();
+                String actionType = (String) actionTypeComboBox.getSelectedItem();
+
+                // Create and record the action
+                GameAction action = new GameAction(
+                        0, // ID will be assigned by database
+                        match.getId(),
+                        selectedPlayer.getPlayer().getId_person(),
+                        actionType,
+                        minutes,
+                        seconds
+                );
+
+                // Add to our list of recorded actions
+                actionsRecorded.add(action);
+
+                // Add to the display table - using our stored reference
+                actionsTableModel.addRow(new Object[] {
+                        action.getFormattedTime(),
+                        selectedPlayer.toString(),
+                        actionType
+                });
+
+                // Update the stats tables
+                updatePlayerStatsFromActions();
+
+                JOptionPane.showMessageDialog(frame,
+                        actionType + " recorded for " + selectedPlayer + " at " + action.getFormattedTime(),
+                        "Action Recorded", JOptionPane.INFORMATION_MESSAGE);
+            }
+        });
+
+        panel.add(playerSelectionPanel);
+        panel.add(actionTypePanel);
+        panel.add(addActionButton);
+
+        return panel;
+    }
+
+    private void updatePlayerStatsFromActions() {
+        // Reset all player stats
+        for (Player player : homePlayers) {
+            playerGoalsMap.put(player.getId_person(), 0);
+            playerAssistsMap.put(player.getId_person(), 0);
+        }
+        for (Player player : awayPlayers) {
+            playerGoalsMap.put(player.getId_person(), 0);
+            playerAssistsMap.put(player.getId_person(), 0);
+        }
+
+        // Count goals and assists from recorded actions
+        for (GameAction action : actionsRecorded) {
+            int playerId = action.getPlayerId();
+
+            if (action.getActionType().equals("GOAL")) {
+                playerGoalsMap.put(playerId, playerGoalsMap.getOrDefault(playerId, 0) + 1);
+            } else if (action.getActionType().equals("ASSIST")) {
+                playerAssistsMap.put(playerId, playerAssistsMap.getOrDefault(playerId, 0) + 1);
+            }
+        }
+
+        // Update tables
+        updateTableFromMaps(homeTeamTableModel, homePlayers);
+        updateTableFromMaps(awayTeamTableModel, awayPlayers);
+
+        // Update score spinners
+        int homeGoals = 0;
+        int awayGoals = 0;
+
+        for (Player player : homePlayers) {
+            homeGoals += playerGoalsMap.getOrDefault(player.getId_person(), 0);
+        }
+
+        for (Player player : awayPlayers) {
+            awayGoals += playerGoalsMap.getOrDefault(player.getId_person(), 0);
+        }
+
+        homeGoalsSpinner.setValue(homeGoals);
+        awayGoalsSpinner.setValue(awayGoals);
+    }
+
+    private void updateTableFromMaps(DefaultTableModel model, List<Player> players) {
+        for (int i = 0; i < model.getRowCount(); i++) {
+            String playerName = (String) model.getValueAt(i, 0);
+
+            // Find player ID by name
+            for (Player player : players) {
+                if (player.getName().equals(playerName)) {
+                    int playerId = player.getId_person();
+                    int goals = playerGoalsMap.getOrDefault(playerId, 0);
+                    int assists = playerAssistsMap.getOrDefault(playerId, 0);
+
+                    model.setValueAt(goals, i, 2);
+                    model.setValueAt(assists, i, 3);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void loadExistingActions(DefaultTableModel actionsModel) {
+        try {
+            List<GameAction> actions = statsDAO.getMatchActions(match.getId());
+            actionsRecorded.addAll(actions);
+
+            // Populate the actions table
+            for (GameAction action : actions) {
+                // Find player name
+                String playerName = "Unknown Player";
+                for (Player player : homePlayers) {
+                    if (player.getId_person() == action.getPlayerId()) {
+                        playerName = player.getName();
+                        break;
+                    }
+                }
+                if (playerName.equals("Unknown Player")) {
+                    for (Player player : awayPlayers) {
+                        if (player.getId_person() == action.getPlayerId()) {
+                            playerName = player.getName();
+                            break;
+                        }
+                    }
+                }
+
+                actionsModel.addRow(new Object[] {
+                        action.getFormattedTime(),
+                        playerName,
+                        action.getActionType()
+                });
+            }
+
+            // Update player stats from actions
+            updatePlayerStatsFromActions();
+
+            // Set timer to the latest action time if available
+            if (!actions.isEmpty()) {
+                // Find the latest time
+                int maxMinutes = 0;
+                int maxSeconds = 0;
+
+                for (GameAction action : actions) {
+                    if (action.getMinute() > maxMinutes ||
+                            (action.getMinute() == maxMinutes && action.getSeconds() > maxSeconds)) {
+                        maxMinutes = action.getMinute();
+                        maxSeconds = action.getSeconds();
+                    }
+                }
+
+                // Set timer
+                minutes = maxMinutes;
+                seconds = maxSeconds;
+                updateTimerDisplay();
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "Error loading match actions: " + e.getMessage());
+        }
     }
 
     private void updateTimerDisplay() {
@@ -242,7 +491,7 @@ public class ScoreboardFrame {
         ) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2 || column == 3; // Only goals and assists columns are editable
+                return false; // Make table read-only as we now update through actions
             }
         };
         return model;
@@ -259,8 +508,8 @@ public class ScoreboardFrame {
                 homeTeamTableModel.addRow(new Object[] {
                         player.getName(),
                         player.getShirtNumber(),
-                        0,  // Goals - editable
-                        0   // Assists - editable
+                        0,  // Goals
+                        0   // Assists
                 });
                 playerGoalsMap.put(player.getId_person(), 0);
                 playerAssistsMap.put(player.getId_person(), 0);
@@ -272,70 +521,16 @@ public class ScoreboardFrame {
                 awayTeamTableModel.addRow(new Object[] {
                         player.getName(),
                         player.getShirtNumber(),
-                        0,  // Goals - editable
-                        0   // Assists - editable
+                        0,  // Goals
+                        0   // Assists
                 });
                 playerGoalsMap.put(player.getId_person(), 0);
                 playerAssistsMap.put(player.getId_person(), 0);
             }
 
-            // Load existing stats if any
-            loadExistingStats();
-
         } catch (SQLException e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading player data: " + e.getMessage());
-        }
-    }
-
-    private void loadExistingStats() {
-        try {
-            // Get existing stats for this match using the new DAO method
-            List<PlayerMatchStat> matchStats = statsDAO.getMatchPlayerStats(match.getId());
-
-            for (PlayerMatchStat stat : matchStats) {
-                int playerId = stat.getPlayerId();
-                int goals = stat.getGoals();
-                int assists = stat.getAssists();
-
-                playerGoalsMap.put(playerId, goals);
-                playerAssistsMap.put(playerId, assists);
-
-                // Update table models
-                updatePlayerStatInTable(homeTeamTableModel, playerId, goals, assists);
-                updatePlayerStatInTable(awayTeamTableModel, playerId, goals, assists);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(frame, "Error loading player stats: " + e.getMessage());
-        }
-    }
-
-    private void updatePlayerStatInTable(DefaultTableModel model, int playerId, int goals, int assists) {
-        // Find player name from ID
-        String playerName = "";
-        for (Player player : homePlayers) {
-            if (player.getId_person() == playerId) {
-                playerName = player.getName();
-                break;
-            }
-        }
-        if (playerName.isEmpty()) {
-            for (Player player : awayPlayers) {
-                if (player.getId_person() == playerId) {
-                    playerName = player.getName();
-                    break;
-                }
-            }
-        }
-
-        // Update the row with the found player name
-        for (int i = 0; i < model.getRowCount(); i++) {
-            if (model.getValueAt(i, 0).equals(playerName)) {
-                model.setValueAt(goals, i, 2);
-                model.setValueAt(assists, i, 3);
-                break;
-            }
         }
     }
 
@@ -362,11 +557,30 @@ public class ScoreboardFrame {
             match.setAwayGoals(awayGoals);
             matchDAO.updateMatch(match);
 
-            // Save player statistics
-            savePlayerStats(homeTeamTable, match.getId());
-            savePlayerStats(awayTeamTable, match.getId());
+            // Delete old actions and stats
+            statsDAO.deleteMatchActions(match.getId());
 
-            JOptionPane.showMessageDialog(frame, "Score and player statistics updated successfully!");
+            // Save actions first
+            for (GameAction action : actionsRecorded) {
+                statsDAO.saveGameAction(
+                        match.getId(),
+                        action.getPlayerId(),
+                        action.getActionType(),
+                        action.getMinute(),
+                        action.getSeconds()
+                );
+            }
+
+            // Then save aggregated stats
+            for (Map.Entry<Integer, Integer> entry : playerGoalsMap.entrySet()) {
+                int playerId = entry.getKey();
+                int goals = entry.getValue();
+                int assists = playerAssistsMap.getOrDefault(playerId, 0);
+
+                statsDAO.savePlayerMatchStats(playerId, match.getId(), goals, assists);
+            }
+
+            JOptionPane.showMessageDialog(frame, "Score, player statistics, and actions updated successfully!");
         } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error updating data: " + e.getMessage(),
@@ -395,48 +609,25 @@ public class ScoreboardFrame {
         return totalGoals;
     }
 
-    private void savePlayerStats(JTable table, int matchId) throws SQLException {
-        DefaultTableModel model = (DefaultTableModel) table.getModel();
-        List<Player> playerList = (table == homeTeamTable) ? homePlayers : awayPlayers;
-
-        for (int i = 0; i < model.getRowCount(); i++) {
-            String playerName = (String) model.getValueAt(i, 0);
-
-            Object goalsValue = model.getValueAt(i, 2);
-            Object assistsValue = model.getValueAt(i, 3);
-
-            int goals, assists;
-
-            // Parse goals
-            if (goalsValue instanceof Integer) {
-                goals = (Integer) goalsValue;
-            } else {
-                goals = Integer.parseInt(goalsValue.toString());
-            }
-
-            // Parse assists
-            if (assistsValue instanceof Integer) {
-                assists = (Integer) assistsValue;
-            } else {
-                assists = Integer.parseInt(assistsValue.toString());
-            }
-
-            // Find player ID by name
-            int playerId = -1;
-            for (Player player : playerList) {
-                if (player.getName().equals(playerName)) {
-                    playerId = player.getId_person();
-                    break;
-                }
-            }
-
-            if (playerId != -1) {
-                statsDAO.savePlayerMatchStats(playerId, matchId, goals, assists);
-            }
-        }
-    }
-
     public void show() {
         frame.setVisible(true);
+    }
+
+    // Helper class for player dropdown
+    private class PlayerItem {
+        private Player player;
+
+        public PlayerItem(Player player) {
+            this.player = player;
+        }
+
+        public Player getPlayer() {
+            return player;
+        }
+
+        @Override
+        public String toString() {
+            return player.getName() + " (#" + player.getShirtNumber() + ")";
+        }
     }
 }

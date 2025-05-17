@@ -2,6 +2,7 @@ package main.java.DAOs;
 
 import main.java.models.Stats;
 import main.java.models.PlayerMatchStat;
+import main.java.models.GameAction;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -110,5 +111,53 @@ public class StatsDAO {
             }
         }
         return matchStats;
+    }
+
+    public void saveGameAction(int matchId, int playerId, String actionType, int minute) throws SQLException {
+        saveGameAction(matchId, playerId, actionType, minute, 0);
+    }
+
+    public void saveGameAction(int matchId, int playerId, String actionType, int minute, int seconds) throws SQLException {
+        String query = "INSERT INTO game_actions (id_match, id_player, action_type, minute, seconds) VALUES (?, ?, ?, ?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setInt(1, matchId);
+            pstmt.setInt(2, playerId);
+            pstmt.setString(3, actionType);
+            pstmt.setInt(4, minute);
+            pstmt.setInt(5, seconds);
+            pstmt.executeUpdate();
+        }
+    }
+
+    public void deleteMatchActions(int matchId) throws SQLException {
+        String query = "DELETE FROM game_actions WHERE id_match = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, matchId);
+            stmt.executeUpdate();
+        }
+    }
+
+    // Method to retrieve game actions with timestamp details
+    public List<GameAction> getMatchActions(int matchId) throws SQLException {
+        List<GameAction> actions = new ArrayList<>();
+        String query = "SELECT id, id_match, id_player, action_type, minute, seconds FROM game_actions WHERE id_match = ? ORDER BY minute, seconds";
+
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, matchId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    GameAction action = new GameAction(
+                            rs.getInt("id"),
+                            rs.getInt("id_match"),
+                            rs.getInt("id_player"),
+                            rs.getString("action_type"),
+                            rs.getInt("minute"),
+                            rs.getInt("seconds")
+                    );
+                    actions.add(action);
+                }
+            }
+        }
+        return actions;
     }
 }
