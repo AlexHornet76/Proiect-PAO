@@ -1,5 +1,6 @@
 package main.java.views;
 
+import main.java.AuditService;
 import javax.swing.*;
 import java.awt.*;
 import java.sql.Connection;
@@ -19,8 +20,12 @@ public class MainFrame {
     private JPanel teamsPanel;
     private CardLayout cardLayout;
     private TeamDAO teamDAO;
+    private AuditService auditService;
 
     public MainFrame() {
+        // Initialize audit service
+        auditService = AuditService.getInstance();
+
         // Initialize database connection
         DatabaseConnection dbConnection = new DatabaseConnection();
         Connection connection = dbConnection.connect();
@@ -46,7 +51,10 @@ public class MainFrame {
 
         // Add a back button at the top
         JButton backButton = new JButton("Back");
-        backButton.addActionListener(e -> cardLayout.show(mainPanel, "HOME"));
+        backButton.addActionListener(e -> {
+            auditService.logAction("NAVIGATION_BACK_TO_HOME");
+            cardLayout.show(mainPanel, "HOME");
+        });
 
         JPanel teamsContentPanel = new JPanel();
         teamsContentPanel.setLayout(new BoxLayout(teamsContentPanel, BoxLayout.Y_AXIS));
@@ -63,7 +71,7 @@ public class MainFrame {
 
         // Set up button actions
         manageTeamsButton.addActionListener(e -> {
-            // Instead of loading teams into the panel, open the ManageTeamsFrame
+            auditService.logAction("OPEN_MANAGE_TEAMS");
             SwingUtilities.invokeLater(() -> {
                 ManageTeamsFrame manageTeamsFrame = new ManageTeamsFrame();
                 manageTeamsFrame.show();
@@ -71,6 +79,7 @@ public class MainFrame {
         });
 
         matchesButton.addActionListener(e -> {
+            auditService.logAction("OPEN_MATCHES");
             SwingUtilities.invokeLater(() -> {
                 MatchesFrame matchesFrame = new MatchesFrame();
                 matchesFrame.show();
@@ -78,6 +87,7 @@ public class MainFrame {
         });
 
         standingsButton.addActionListener(e -> {
+            auditService.logAction("OPEN_STANDINGS");
             SwingUtilities.invokeLater(() -> {
                 StandingsFrame standingsFrame = new StandingsFrame();
                 standingsFrame.show();
@@ -122,6 +132,7 @@ public class MainFrame {
     }
 
     private void loadTeamsIntoPanel(JPanel panel) {
+        auditService.logAction("LOAD_TEAMS_LIST");
         panel.removeAll(); // Clear existing buttons
         try {
             List<Team> teams = teamDAO.readAllTeams();
@@ -131,11 +142,15 @@ public class MainFrame {
                 teamButton.setPreferredSize(new Dimension(400, 50));
                 teamButton.setMaximumSize(new Dimension(Short.MAX_VALUE, 50));
                 teamButton.setAlignmentX(Component.CENTER_ALIGNMENT);
-                teamButton.addActionListener(e -> openTeamDetailsFrame(team));
+                teamButton.addActionListener(e -> {
+                    auditService.logAction("VIEW_TEAM_DETAILS_" + team.getName());
+                    openTeamDetailsFrame(team);
+                });
                 panel.add(teamButton);
                 panel.add(Box.createRigidArea(new Dimension(0, 10)));
             }
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_TEAMS");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading teams from the database.");
         }
@@ -151,10 +166,12 @@ public class MainFrame {
     }
 
     public void show() {
+        auditService.logAction("MAIN_MENU_SHOWN");
         frame.setVisible(true);
     }
 
     public static void main(String[] args) {
+        AuditService.getInstance().logAction("APPLICATION_STARTUP");
         SwingUtilities.invokeLater(() -> {
             MainFrame app = new MainFrame();
             app.show();

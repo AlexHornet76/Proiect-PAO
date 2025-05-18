@@ -1,5 +1,6 @@
 package main.java.views;
 
+import main.java.AuditService;
 import main.java.DAOs.CoachDAO;
 import main.java.DAOs.PlayerDAO;
 import main.java.DatabaseConnection;
@@ -11,7 +12,6 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -28,6 +28,7 @@ public class ManageTeamDetailsFrame {
     private JTable dataTable;
     private DefaultTableModel tableModel;
     private boolean showingPlayers = true;
+    private AuditService auditService;
 
     // Constants for card layout
     private static final String PLAYERS_PANEL = "PLAYERS";
@@ -35,6 +36,10 @@ public class ManageTeamDetailsFrame {
 
     public ManageTeamDetailsFrame(Team team) {
         this.team = team;
+
+        // Initialize audit service
+        auditService = AuditService.getInstance();
+        auditService.logAction("TEAM_DETAILS_FRAME_INITIALIZED_" + team.getName());
 
         DatabaseConnection dbConnection = new DatabaseConnection();
         Connection connection = dbConnection.connect();
@@ -59,10 +64,12 @@ public class ManageTeamDetailsFrame {
         JButton switchButton = new JButton("Switch to Coaches");
         switchButton.addActionListener(e -> {
             if (showingPlayers) {
+                auditService.logAction("VIEW_COACHES_" + team.getName());
                 cardLayout.show(contentPanel, COACHES_PANEL);
                 switchButton.setText("Switch to Players");
                 showingPlayers = false;
             } else {
+                auditService.logAction("VIEW_PLAYERS_" + team.getName());
                 cardLayout.show(contentPanel, PLAYERS_PANEL);
                 switchButton.setText("Switch to Coaches");
                 showingPlayers = true;
@@ -77,6 +84,14 @@ public class ManageTeamDetailsFrame {
 
         // Initially show players panel
         cardLayout.show(contentPanel, PLAYERS_PANEL);
+
+        // Add window listener to log when frame is closed
+        frame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                auditService.logAction("CLOSE_TEAM_DETAILS_FRAME_" + team.getName());
+            }
+        });
     }
 
     private JPanel createPlayersPanel() {
@@ -156,6 +171,7 @@ public class ManageTeamDetailsFrame {
     }
 
     private void loadPlayersData() {
+        auditService.logAction("LOAD_PLAYERS_DATA_" + team.getName());
         tableModel.setRowCount(0);
         try {
             List<Player> players = playerDAO.getPlayersByTeam(team.getId_team());
@@ -178,12 +194,14 @@ public class ManageTeamDetailsFrame {
             dataTable.getColumnModel().getColumn(0).setMaxWidth(0);
             dataTable.getColumnModel().getColumn(0).setWidth(0);
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_PLAYERS_" + team.getName());
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading players: " + e.getMessage());
         }
     }
 
     private void loadCoachesData(DefaultTableModel model, JTable coachTable) {
+        auditService.logAction("LOAD_COACHES_DATA_" + team.getName());
         model.setRowCount(0);
         try {
             List<Coach> coaches = coachDAO.getCoachesByTeam(team.getId_team());
@@ -206,12 +224,14 @@ public class ManageTeamDetailsFrame {
             coachTable.getColumnModel().getColumn(0).setMaxWidth(0);
             coachTable.getColumnModel().getColumn(0).setWidth(0);
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_COACHES_" + team.getName());
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading coaches: " + e.getMessage());
         }
     }
 
     private void addPlayer() {
+        auditService.logAction("OPEN_ADD_PLAYER_DIALOG_" + team.getName());
         JTextField nameField = new JTextField();
         JTextField birthdayField = new JTextField("yyyy-MM-dd");
         JTextField nationalityField = new JTextField();
@@ -239,17 +259,22 @@ public class ManageTeamDetailsFrame {
                 Player player = new Player(0, name, birthday, nationality, position, shirtNumber);
                 playerDAO.createPlayer(player, team.getId_team());
 
+                auditService.logAction("PLAYER_ADDED_" + name + "_TO_" + team.getName());
                 loadPlayersData();
             } catch (ParseException | SQLException | NumberFormatException e) {
+                auditService.logAction("ERROR_ADDING_PLAYER");
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(frame, "Error adding player: " + e.getMessage());
             }
+        } else {
+            auditService.logAction("CANCELLED_ADD_PLAYER");
         }
     }
 
     private void updatePlayer() {
         int selectedRow = dataTable.getSelectedRow();
         if (selectedRow == -1) {
+            auditService.logAction("NO_PLAYER_SELECTED_FOR_UPDATE");
             JOptionPane.showMessageDialog(frame, "Please select a player to update");
             return;
         }
@@ -261,6 +286,8 @@ public class ManageTeamDetailsFrame {
         String nationality = (String) tableModel.getValueAt(selectedRow, 3);
         String position = (String) tableModel.getValueAt(selectedRow, 4);
         int shirtNumber = (int) tableModel.getValueAt(selectedRow, 5);
+
+        auditService.logAction("OPEN_UPDATE_PLAYER_DIALOG_" + name);
 
         // Create input fields for updating
         JTextField nameField = new JTextField(name);
@@ -294,17 +321,22 @@ public class ManageTeamDetailsFrame {
                 );
                 playerDAO.updatePlayer(player);
 
+                auditService.logAction("PLAYER_UPDATED_" + name);
                 loadPlayersData();
             } catch (ParseException | SQLException | NumberFormatException e) {
+                auditService.logAction("ERROR_UPDATING_PLAYER");
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(frame, "Error updating player: " + e.getMessage());
             }
+        } else {
+            auditService.logAction("CANCELLED_UPDATE_PLAYER");
         }
     }
 
     private void deletePlayer() {
         int selectedRow = dataTable.getSelectedRow();
         if (selectedRow == -1) {
+            auditService.logAction("NO_PLAYER_SELECTED_FOR_DELETE");
             JOptionPane.showMessageDialog(frame, "Please select a player to delete");
             return;
         }
@@ -313,6 +345,8 @@ public class ManageTeamDetailsFrame {
         int playerId = (int) tableModel.getValueAt(selectedRow, 0);
         String playerName = (String) tableModel.getValueAt(selectedRow, 1);
 
+        auditService.logAction("OPEN_DELETE_PLAYER_DIALOG_" + playerName);
+
         int confirm = JOptionPane.showConfirmDialog(frame,
                 "Are you sure you want to delete player " + playerName + "?",
                 "Confirm Delete", JOptionPane.YES_NO_OPTION);
@@ -320,15 +354,20 @@ public class ManageTeamDetailsFrame {
         if (confirm == JOptionPane.YES_OPTION) {
             try {
                 playerDAO.deletePlayer(playerId);
+                auditService.logAction("PLAYER_DELETED_" + playerName);
                 loadPlayersData();
             } catch (SQLException e) {
+                auditService.logAction("ERROR_DELETING_PLAYER");
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(frame, "Error deleting player: " + e.getMessage());
             }
+        } else {
+            auditService.logAction("CANCELLED_DELETE_PLAYER");
         }
     }
 
     private void addCoach() {
+        auditService.logAction("OPEN_ADD_COACH_DIALOG_" + team.getName());
         JTextField nameField = new JTextField();
         JTextField birthdayField = new JTextField("yyyy-MM-dd");
         JTextField nationalityField = new JTextField();
@@ -356,6 +395,8 @@ public class ManageTeamDetailsFrame {
                 Coach coach = new Coach(0, name, birthday, nationality, type, experience);
                 coachDAO.createCoach(coach, team.getId_team());
 
+                auditService.logAction("COACH_ADDED_" + name + "_TO_" + team.getName());
+
                 // Refresh coach data in the table model
                 if (!showingPlayers) {
                     DefaultTableModel coachModel = (DefaultTableModel) ((JTable) ((JScrollPane) ((JPanel) contentPanel.getComponent(1)).getComponent(0)).getViewport().getView()).getModel();
@@ -363,15 +404,19 @@ public class ManageTeamDetailsFrame {
                     loadCoachesData(coachModel, coachTable);
                 }
             } catch (ParseException | SQLException | NumberFormatException e) {
+                auditService.logAction("ERROR_ADDING_COACH");
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(frame, "Error adding coach: " + e.getMessage());
             }
+        } else {
+            auditService.logAction("CANCELLED_ADD_COACH");
         }
     }
 
     private void updateCoach(JTable coachTable, DefaultTableModel coachTableModel) {
         int selectedRow = coachTable.getSelectedRow();
         if (selectedRow == -1) {
+            auditService.logAction("NO_COACH_SELECTED_FOR_UPDATE");
             JOptionPane.showMessageDialog(frame, "Please select a coach to update");
             return;
         }
@@ -383,6 +428,8 @@ public class ManageTeamDetailsFrame {
         String nationality = (String) coachTableModel.getValueAt(selectedRow, 3);
         String type = (String) coachTableModel.getValueAt(selectedRow, 4);
         int experience = (int) coachTableModel.getValueAt(selectedRow, 5);
+
+        auditService.logAction("OPEN_UPDATE_COACH_DIALOG_" + name);
 
         // Create input fields for updating
         JTextField nameField = new JTextField(name);
@@ -416,17 +463,22 @@ public class ManageTeamDetailsFrame {
                 );
                 coachDAO.updateCoach(coach);
 
+                auditService.logAction("COACH_UPDATED_" + name);
                 loadCoachesData(coachTableModel, coachTable);
             } catch (ParseException | SQLException | NumberFormatException e) {
+                auditService.logAction("ERROR_UPDATING_COACH");
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(frame, "Error updating coach: " + e.getMessage());
             }
+        } else {
+            auditService.logAction("CANCELLED_UPDATE_COACH");
         }
     }
 
     private void deleteCoach(JTable coachTable, DefaultTableModel coachTableModel) {
         int selectedRow = coachTable.getSelectedRow();
         if (selectedRow == -1) {
+            auditService.logAction("NO_COACH_SELECTED_FOR_DELETE");
             JOptionPane.showMessageDialog(frame, "Please select a coach to delete");
             return;
         }
@@ -435,6 +487,8 @@ public class ManageTeamDetailsFrame {
         int coachId = (int) coachTableModel.getValueAt(selectedRow, 0);
         String coachName = (String) coachTableModel.getValueAt(selectedRow, 1);
 
+        auditService.logAction("OPEN_DELETE_COACH_DIALOG_" + coachName);
+
         int confirm = JOptionPane.showConfirmDialog(frame,
                 "Are you sure you want to delete coach " + coachName + "?",
                 "Confirm Delete", JOptionPane.YES_NO_OPTION);
@@ -442,15 +496,20 @@ public class ManageTeamDetailsFrame {
         if (confirm == JOptionPane.YES_OPTION) {
             try {
                 coachDAO.deleteCoach(coachId);
+                auditService.logAction("COACH_DELETED_" + coachName);
                 loadCoachesData(coachTableModel, coachTable);
             } catch (SQLException e) {
+                auditService.logAction("ERROR_DELETING_COACH");
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(frame, "Error deleting coach: " + e.getMessage());
             }
+        } else {
+            auditService.logAction("CANCELLED_DELETE_COACH");
         }
     }
 
     public void show() {
+        auditService.logAction("TEAM_DETAILS_FRAME_SHOWN_" + team.getName());
         frame.setVisible(true);
     }
 }

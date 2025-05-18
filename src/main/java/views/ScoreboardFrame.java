@@ -1,5 +1,6 @@
 package main.java.views;
 
+import main.java.AuditService;
 import main.java.DAOs.MatchDAO;
 import main.java.DAOs.PlayerDAO;
 import main.java.DAOs.StatsDAO;
@@ -30,6 +31,7 @@ public class ScoreboardFrame {
     private JSpinner homeGoalsSpinner;
     private JSpinner awayGoalsSpinner;
     private JButton saveButton;
+    private AuditService auditService;
 
     private DefaultTableModel homeTeamTableModel;
     private DefaultTableModel awayTeamTableModel;
@@ -58,6 +60,10 @@ public class ScoreboardFrame {
     public ScoreboardFrame(Match match) {
         this.match = match;
 
+        // Initialize audit service
+        auditService = AuditService.getInstance();
+        auditService.logAction("SCOREBOARD_FRAME_INITIALIZED_" + match.getHomeTeam() + "_VS_" + match.getAwayTeam());
+
         // Initialize database connection
         DatabaseConnection dbConnection = new DatabaseConnection();
         Connection connection = dbConnection.connect();
@@ -71,6 +77,14 @@ public class ScoreboardFrame {
         frame.setSize(900, 700);
         frame.setLocationRelativeTo(null);
         frame.setLayout(new BorderLayout());
+
+        // Add window listener to log when frame is closed
+        frame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                auditService.logAction("CLOSE_SCOREBOARD_FRAME_" + match.getHomeTeam() + "_VS_" + match.getAwayTeam());
+            }
+        });
 
         // Create content panel with padding
         JPanel contentPanel = new JPanel();
@@ -172,9 +186,11 @@ public class ScoreboardFrame {
             if (isTimerRunning) {
                 matchTimer.stop();
                 startPauseTimerButton.setText("Start");
+                auditService.logAction("TIMER_PAUSED_" + formatCurrentTime());
             } else {
                 matchTimer.start();
                 startPauseTimerButton.setText("Pause");
+                auditService.logAction("TIMER_STARTED_" + formatCurrentTime());
             }
             isTimerRunning = !isTimerRunning;
         });
@@ -186,6 +202,7 @@ public class ScoreboardFrame {
             seconds = 0;
             updateTimerDisplay();
             startPauseTimerButton.setText("Start");
+            auditService.logAction("TIMER_RESET");
         });
 
         // Initialize table models first
@@ -238,7 +255,7 @@ public class ScoreboardFrame {
         ) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; // Make table read-only
+                return false;
             }
         };
 
@@ -252,9 +269,15 @@ public class ScoreboardFrame {
         removeActionButton.addActionListener(e -> {
             int selectedRow = actionsTable.getSelectedRow();
             if (selectedRow != -1) {
+                String actionInfo = actionsTableModel.getValueAt(selectedRow, 1) + "_" +
+                        actionsTableModel.getValueAt(selectedRow, 2) + "_" +
+                        actionsTableModel.getValueAt(selectedRow, 0);
                 actionsRecorded.remove(selectedRow);
                 actionsTableModel.removeRow(selectedRow);
                 updatePlayerStatsFromActions();
+                auditService.logAction("ACTION_REMOVED_" + actionInfo);
+            } else {
+                auditService.logAction("NO_ACTION_SELECTED_FOR_REMOVAL");
             }
         });
         actionsTablePanel.add(removeActionButton, BorderLayout.SOUTH);
@@ -272,7 +295,10 @@ public class ScoreboardFrame {
         JButton backButton = new JButton("Back");
         backButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         backButton.setMaximumSize(new Dimension(200, 40));
-        backButton.addActionListener(e -> frame.dispose());
+        backButton.addActionListener(e -> {
+            auditService.logAction("CLOSE_SCOREBOARD_FRAME_" + match.getHomeTeam() + "_VS_" + match.getAwayTeam());
+            frame.dispose();
+        });
 
         // Add components to content panel
         contentPanel.add(dateLabel);
@@ -290,6 +316,10 @@ public class ScoreboardFrame {
         contentPanel.add(backButton);
 
         frame.add(new JScrollPane(contentPanel), BorderLayout.CENTER);
+    }
+
+    private String formatCurrentTime() {
+        return String.format("%02d:%02d", minutes, seconds);
     }
 
     private JPanel createTeamActionPanel(String teamName) {
@@ -325,9 +355,9 @@ public class ScoreboardFrame {
 
                 // Create and record the action
                 GameAction action = new GameAction(
-                        0, // ID will be assigned by database
-                        match.getId(),
+                        0,
                         selectedPlayer.getPlayer().getId_person(),
+                        match.getId(),
                         actionType,
                         minutes,
                         seconds
@@ -338,7 +368,7 @@ public class ScoreboardFrame {
 
                 // Add to the display table - using our stored reference
                 actionsTableModel.addRow(new Object[] {
-                        action.getFormattedTime(),
+                        formatCurrentTime(),
                         selectedPlayer.toString(),
                         actionType
                 });
@@ -346,9 +376,13 @@ public class ScoreboardFrame {
                 // Update the stats tables
                 updatePlayerStatsFromActions();
 
+                auditService.logAction(actionType + "_RECORDED_" +
+                        selectedPlayer.getPlayer().getName() + "_" +
+                        formatCurrentTime());
+
                 JOptionPane.showMessageDialog(frame,
-                        actionType + " recorded for " + selectedPlayer + " at " + action.getFormattedTime(),
-                        "Action Recorded", JOptionPane.INFORMATION_MESSAGE);
+                        "Action recorded: " + selectedPlayer.toString() + " - " + actionType +
+                                " at " + formatCurrentTime());
             }
         });
 
@@ -399,6 +433,8 @@ public class ScoreboardFrame {
 
         homeGoalsSpinner.setValue(homeGoals);
         awayGoalsSpinner.setValue(awayGoals);
+
+        auditService.logAction("PLAYER_STATS_UPDATED");
     }
 
     private void updateTableFromMaps(DefaultTableModel model, List<Player> players) {
@@ -421,6 +457,7 @@ public class ScoreboardFrame {
     }
 
     private void loadExistingActions(DefaultTableModel actionsModel) {
+        auditService.logAction("LOADING_EXISTING_ACTIONS");
         try {
             List<GameAction> actions = statsDAO.getMatchActions(match.getId());
             actionsRecorded.addAll(actions);
@@ -431,21 +468,21 @@ public class ScoreboardFrame {
                 String playerName = "Unknown Player";
                 for (Player player : homePlayers) {
                     if (player.getId_person() == action.getPlayerId()) {
-                        playerName = player.getName();
+                        playerName = player.getName() + " (#" + player.getShirtNumber() + ")";
                         break;
                     }
                 }
                 if (playerName.equals("Unknown Player")) {
                     for (Player player : awayPlayers) {
                         if (player.getId_person() == action.getPlayerId()) {
-                            playerName = player.getName();
+                            playerName = player.getName() + " (#" + player.getShirtNumber() + ")";
                             break;
                         }
                     }
                 }
 
                 actionsModel.addRow(new Object[] {
-                        action.getFormattedTime(),
+                        String.format("%02d:%02d", action.getMinute(), action.getSeconds()),
                         playerName,
                         action.getActionType()
                 });
@@ -474,7 +511,10 @@ public class ScoreboardFrame {
                 updateTimerDisplay();
             }
 
+            auditService.logAction("EXISTING_ACTIONS_LOADED_" + actions.size());
+
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_ACTIONS");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading match actions: " + e.getMessage());
         }
@@ -498,6 +538,7 @@ public class ScoreboardFrame {
     }
 
     private void loadPlayerData() {
+        auditService.logAction("LOADING_PLAYER_DATA");
         try {
             int homeTeamId = TeamDAO.getTeamIdByName(match.getHomeTeam());
             int awayTeamId = TeamDAO.getTeamIdByName(match.getAwayTeam());
@@ -508,8 +549,8 @@ public class ScoreboardFrame {
                 homeTeamTableModel.addRow(new Object[] {
                         player.getName(),
                         player.getShirtNumber(),
-                        0,  // Goals
-                        0   // Assists
+                        0,
+                        0
                 });
                 playerGoalsMap.put(player.getId_person(), 0);
                 playerAssistsMap.put(player.getId_person(), 0);
@@ -521,20 +562,24 @@ public class ScoreboardFrame {
                 awayTeamTableModel.addRow(new Object[] {
                         player.getName(),
                         player.getShirtNumber(),
-                        0,  // Goals
-                        0   // Assists
+                        0,
+                        0
                 });
                 playerGoalsMap.put(player.getId_person(), 0);
                 playerAssistsMap.put(player.getId_person(), 0);
             }
 
+            auditService.logAction("PLAYER_DATA_LOADED_HOME_" + homePlayers.size() + "_AWAY_" + awayPlayers.size());
+
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_PLAYER_DATA");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading player data: " + e.getMessage());
         }
     }
 
     private void saveScore() {
+        auditService.logAction("SAVING_MATCH_SCORE_AND_STATS");
         try {
             int homeGoals = (Integer) homeGoalsSpinner.getValue();
             int awayGoals = (Integer) awayGoalsSpinner.getValue();
@@ -544,11 +589,12 @@ public class ScoreboardFrame {
             int totalAwayGoals = getTotalGoalsFromTable(awayTeamTableModel);
 
             if (totalHomeGoals != homeGoals || totalAwayGoals != awayGoals) {
+                auditService.logAction("SCORE_VALIDATION_ERROR");
                 JOptionPane.showMessageDialog(frame,
-                        "The sum of individual player goals must match the team scores.\n" +
+                        "The total goals in the tables don't match the final score.\n" +
                                 "Home team: " + totalHomeGoals + " vs " + homeGoals + "\n" +
                                 "Away team: " + totalAwayGoals + " vs " + awayGoals,
-                        "Validation Error", JOptionPane.ERROR_MESSAGE);
+                        "Score Mismatch", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
@@ -563,8 +609,8 @@ public class ScoreboardFrame {
             // Save actions first
             for (GameAction action : actionsRecorded) {
                 statsDAO.saveGameAction(
-                        match.getId(),
                         action.getPlayerId(),
+                        match.getId(),
                         action.getActionType(),
                         action.getMinute(),
                         action.getSeconds()
@@ -580,8 +626,11 @@ public class ScoreboardFrame {
                 statsDAO.savePlayerMatchStats(playerId, match.getId(), goals, assists);
             }
 
+            auditService.logAction("MATCH_SCORE_SAVED_" + homeGoals + "-" + awayGoals +
+                    "_ACTIONS_" + actionsRecorded.size());
             JOptionPane.showMessageDialog(frame, "Score, player statistics, and actions updated successfully!");
         } catch (Exception e) {
+            auditService.logAction("ERROR_SAVING_SCORE_AND_STATS");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error updating data: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
@@ -599,6 +648,7 @@ public class ScoreboardFrame {
                     totalGoals += Integer.parseInt(value.toString());
                 } catch (NumberFormatException e) {
                     // Handle invalid input
+                    auditService.logAction("INVALID_GOAL_VALUE_" + value);
                     JOptionPane.showMessageDialog(frame,
                             "Invalid goal value: " + value + ". Please enter a number.",
                             "Input Error", JOptionPane.ERROR_MESSAGE);
@@ -610,6 +660,7 @@ public class ScoreboardFrame {
     }
 
     public void show() {
+        auditService.logAction("SCOREBOARD_FRAME_SHOWN_" + match.getHomeTeam() + "_VS_" + match.getAwayTeam());
         frame.setVisible(true);
     }
 

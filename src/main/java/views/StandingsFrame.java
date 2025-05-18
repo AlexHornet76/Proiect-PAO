@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.List;
 
+import main.java.AuditService;
 import main.java.DAOs.MatchDAO;
 import main.java.DAOs.StatsDAO;
 import main.java.DatabaseConnection;
@@ -23,8 +24,13 @@ public class StandingsFrame {
     private StatsDAO statsDAO;
     private JButton standingsButton;
     private JButton topScorersButton;
+    private AuditService auditService;
 
     public StandingsFrame() {
+        // Initialize audit service
+        auditService = AuditService.getInstance();
+        auditService.logAction("STANDINGS_FRAME_INITIALIZED");
+
         // Initialize database connection
         DatabaseConnection dbConnection = new DatabaseConnection();
         Connection connection = dbConnection.connect();
@@ -42,13 +48,23 @@ public class StandingsFrame {
         JPanel topPanel = new JPanel(new FlowLayout());
 
         JButton backButton = new JButton("Back");
-        backButton.addActionListener(e -> frame.dispose());
+        backButton.addActionListener(e -> {
+            auditService.logAction("CLOSE_STANDINGS_FRAME");
+            frame.dispose();
+        });
 
         standingsButton = new JButton("Team Standings");
         topScorersButton = new JButton("Top Scorers");
 
-        standingsButton.addActionListener(e -> showStandings());
-        topScorersButton.addActionListener(e -> showTopScorers());
+        standingsButton.addActionListener(e -> {
+            auditService.logAction("VIEW_TEAM_STANDINGS");
+            showStandings();
+        });
+
+        topScorersButton.addActionListener(e -> {
+            auditService.logAction("VIEW_TOP_SCORERS");
+            showTopScorers();
+        });
 
         topPanel.add(backButton);
         topPanel.add(standingsButton);
@@ -133,6 +149,7 @@ public class StandingsFrame {
     }
 
     private void loadStandingsData() {
+        auditService.logAction("LOAD_STANDINGS_DATA");
         try {
             List<Match> matches = matchDAO.getPlayedMatches();
             Map<String, TeamStats> teamStatsMap = calculateTeamStats(matches);
@@ -181,6 +198,7 @@ public class StandingsFrame {
                 });
             }
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_STANDINGS_DATA");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading standings data: " + e.getMessage());
         }
@@ -238,6 +256,7 @@ public class StandingsFrame {
     }
 
     private void loadTopScorersData() {
+        auditService.logAction("LOAD_TOP_SCORERS_DATA");
         try {
             List<Stats> topScorers = statsDAO.getTopScorers(10);
 
@@ -262,12 +281,14 @@ public class StandingsFrame {
                 });
             }
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_TOP_SCORERS_DATA");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading top scorers data: " + e.getMessage());
         }
     }
 
     public void show() {
+        auditService.logAction("STANDINGS_FRAME_SHOWN");
         // Show standings by default when the frame is opened and hide the standings button
         standingsButton.setVisible(false);
         topScorersButton.setVisible(true);

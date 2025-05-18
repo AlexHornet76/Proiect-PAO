@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
+import main.java.AuditService;
 import main.java.DAOs.MatchDAO;
 import main.java.DatabaseConnection;
 import main.java.models.Match;
@@ -19,8 +20,13 @@ public class MatchesFrame {
     private MatchDAO matchDAO;
     private boolean showingUpcoming = true;
     private JButton toggleButton;
+    private AuditService auditService;
 
     public MatchesFrame() {
+        // Initialize audit service
+        auditService = AuditService.getInstance();
+        auditService.logAction("MATCHES_FRAME_INITIALIZED");
+
         // Initialize database connection
         DatabaseConnection dbConnection = new DatabaseConnection();
         Connection connection = dbConnection.connect();
@@ -40,7 +46,10 @@ public class MatchesFrame {
 
         // Back button
         JButton backButton = new JButton("Back");
-        backButton.addActionListener(e -> frame.dispose());
+        backButton.addActionListener(e -> {
+            auditService.logAction("CLOSE_MATCHES_FRAME");
+            frame.dispose();
+        });
 
         // Toggle button
         toggleButton = new JButton("Show Played Matches");
@@ -64,10 +73,12 @@ public class MatchesFrame {
 
     private void toggleMatchesView() {
         if (showingUpcoming) {
+            auditService.logAction("VIEW_PLAYED_MATCHES");
             loadPlayedMatches();
             toggleButton.setText("Show Upcoming Matches");
             showingUpcoming = false;
         } else {
+            auditService.logAction("VIEW_UPCOMING_MATCHES");
             loadUpcomingMatches();
             toggleButton.setText("Show Played Matches");
             showingUpcoming = true;
@@ -75,6 +86,7 @@ public class MatchesFrame {
     }
 
     private void loadUpcomingMatches() {
+        auditService.logAction("LOAD_UPCOMING_MATCHES");
         matchesPanel.removeAll();
 
         JLabel titleLabel = new JLabel("Upcoming Matches");
@@ -114,6 +126,7 @@ public class MatchesFrame {
                 }
             }
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_UPCOMING_MATCHES");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading upcoming matches: " + e.getMessage());
         }
@@ -123,6 +136,7 @@ public class MatchesFrame {
     }
 
     private void openScoreboard(Match match) {
+        auditService.logAction("OPEN_SCOREBOARD_" + match.getHomeTeam() + "_VS_" + match.getAwayTeam());
         SwingUtilities.invokeLater(() -> {
             ScoreboardFrame scoreboardFrame = new ScoreboardFrame(match);
             scoreboardFrame.show();
@@ -130,6 +144,7 @@ public class MatchesFrame {
     }
 
     private void loadPlayedMatches() {
+        auditService.logAction("LOAD_PLAYED_MATCHES");
         matchesPanel.removeAll();
 
         JLabel titleLabel = new JLabel("Played Matches");
@@ -159,6 +174,7 @@ public class MatchesFrame {
                 }
             }
         } catch (SQLException e) {
+            auditService.logAction("ERROR_LOADING_PLAYED_MATCHES");
             e.printStackTrace();
             JOptionPane.showMessageDialog(frame, "Error loading played matches: " + e.getMessage());
         }
@@ -218,6 +234,7 @@ public class MatchesFrame {
     }
 
     public void show() {
+        auditService.logAction("MATCHES_FRAME_SHOWN");
         frame.setVisible(true);
     }
 }

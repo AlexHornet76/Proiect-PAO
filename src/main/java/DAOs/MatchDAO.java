@@ -21,7 +21,7 @@ public class MatchDAO {
                 "FROM MATCHES m " +
                 "JOIN TEAM t1 ON m.id_home = t1.id_team " +
                 "JOIN TEAM t2 ON m.id_away = t2.id_team " +
-                "AND m.play_date > NOW() " +
+                "WHERE m.goals_home = 0 AND m.goals_away = 0 "+
                 "ORDER BY m.play_date ASC";
 
         try (PreparedStatement stmt = connection.prepareStatement(query);
@@ -50,8 +50,7 @@ public class MatchDAO {
                 "FROM MATCHES m " +
                 "JOIN TEAM t1 ON m.id_home = t1.id_team " +
                 "JOIN TEAM t2 ON m.id_away = t2.id_team " +
-                "WHERE m.goals_home IS NOT NULL AND m.goals_away IS NOT NULL " +
-                "AND m.play_date < NOW() " +
+                "WHERE m.goals_home != 0 AND m.goals_away != 0 " +
                 "ORDER BY m.play_date DESC";
 
         try (PreparedStatement stmt = connection.prepareStatement(query);

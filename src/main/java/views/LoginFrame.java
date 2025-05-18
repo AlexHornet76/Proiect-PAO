@@ -1,5 +1,6 @@
 package main.java.views;
 
+import main.java.AuditService;
 import main.java.DAOs.UserDAO;
 import main.java.DatabaseConnection;
 
@@ -16,8 +17,12 @@ public class LoginFrame {
     private JButton loginButton;
     private UserDAO userDAO;
     private JButton registerButton;
+    private AuditService auditService;
 
     public LoginFrame() {
+        // Initialize audit service
+        auditService = AuditService.getInstance();
+
         // Initialize database connection
         DatabaseConnection dbConnection = new DatabaseConnection();
         Connection connection = dbConnection.connect();
@@ -60,6 +65,7 @@ public class LoginFrame {
         registerButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
+                auditService.logAction("OPEN_REGISTRATION_DIALOG");
                 showRegistrationDialog();
             }
         });
@@ -98,12 +104,14 @@ public class LoginFrame {
                 String password = new String(passwordField.getPassword());
 
                 if (authenticate(username, password)) {
+                    auditService.logAction("SUCCESSFUL_LOGIN");
                     frame.dispose();
                     SwingUtilities.invokeLater(() -> {
                         MainFrame mainFrame = new MainFrame();
                         mainFrame.show();
                     });
                 } else {
+                    auditService.logAction("FAILED_LOGIN_ATTEMPT");
                     JOptionPane.showMessageDialog(frame,
                             "Invalid username or password",
                             "Login Error",
@@ -179,6 +187,7 @@ public class LoginFrame {
 
                 // Validation
                 if (username.isEmpty() || password.isEmpty() || confirmPassword.isEmpty()) {
+                    auditService.logAction("REGISTRATION_VALIDATION_FAILED");
                     JOptionPane.showMessageDialog(dialog,
                             "All fields are required",
                             "Registration Error",
@@ -187,6 +196,7 @@ public class LoginFrame {
                 }
 
                 if (!password.equals(confirmPassword)) {
+                    auditService.logAction("REGISTRATION_PASSWORD_MISMATCH");
                     JOptionPane.showMessageDialog(dialog,
                             "Passwords do not match",
                             "Registration Error",
@@ -196,6 +206,7 @@ public class LoginFrame {
 
                 // Check if username already exists
                 if (userDAO.usernameExists(username)) {
+                    auditService.logAction("REGISTRATION_USERNAME_EXISTS");
                     JOptionPane.showMessageDialog(dialog,
                             "Username already exists",
                             "Registration Error",
@@ -206,12 +217,14 @@ public class LoginFrame {
                 // Create new user
                 boolean success = userDAO.createUser(username, password);
                 if (success) {
+                    auditService.logAction("SUCCESSFUL_REGISTRATION");
                     JOptionPane.showMessageDialog(dialog,
                             "Registration successful! Please log in.",
                             "Success",
                             JOptionPane.INFORMATION_MESSAGE);
                     dialog.dispose();
                 } else {
+                    auditService.logAction("FAILED_REGISTRATION");
                     JOptionPane.showMessageDialog(dialog,
                             "Failed to create account",
                             "Registration Error",
@@ -223,6 +236,7 @@ public class LoginFrame {
         cancelButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
+                auditService.logAction("REGISTRATION_CANCELLED");
                 dialog.dispose();
             }
         });
@@ -236,6 +250,7 @@ public class LoginFrame {
     }
 
     public void show() {
+        auditService.logAction("LOGIN_SCREEN_SHOWN");
         frame.setVisible(true);
     }
 }
